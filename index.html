@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PlantStudio</title>
+  <link rel="icon" href="icons/BreederForm_varyColors.png">
+  <link rel="stylesheet" href="vendor/98.css/98.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="window app" id="appWindow">
+    <div class="title-bar" id="appTitleBar">
+      <div class="title-bar-text" id="title">PlantStudio</div>
+      <div class="title-bar-controls"><button aria-label="Help" data-command="about"></button></div>
+    </div>
+
+    <nav class="menubar" id="menubar" aria-label="Main menu"></nav>
+
+    <div class="toolbar" role="toolbar" aria-label="Drawing tools">
+      <button class="tool" data-tool="drag" title="Drag plants"><img src="icons/dragCursorMode.png" alt="Drag"></button>
+      <button class="tool" data-tool="scroll" title="Scroll the drawing"><img src="icons/scrollCursorMode.png" alt="Scroll"></button>
+      <button class="tool" data-tool="rotate" title="Rotate plants"><img src="icons/rotateCursorMode.png" alt="Rotate"></button>
+      <button class="tool" data-tool="magnify" title="Magnify: click to zoom in, shift-click to zoom out, or pinch"><img src="icons/magnifyCursorMode.png" alt="Magnify"></button>
+      <button class="tool" data-tool="pose" title="Pose: click a part of a plant"><img class="strip" src="icons/MainForm_posingSelectionCursorMode.png" alt="Pose"></button>
+      <span class="divider"></span>
+      <select id="zoom" aria-label="Magnification"></select>
+      <button class="tool wide" data-command="fit">Scale to Fit</button>
+      <span class="divider"></span>
+      <button class="tool" data-view="all" title="View all plants"><img class="strip" src="icons/viewFreeFloating.png" alt="All plants"></button>
+      <button class="tool" data-view="one" title="View one plant at a time"><img class="strip" src="icons/viewOneOnly.png" alt="One plant"></button>
+      <span class="divider"></span>
+      <button class="tool" data-area="top" title="Drawing area on top"><img class="strip" src="icons/drawingAreaOnTop.png" alt="On top"></button>
+      <button class="tool" data-area="side" title="Drawing area on the side"><img class="strip" src="icons/drawingAreaOnSide.png" alt="On side"></button>
+    </div>
+
+    <div class="workspace area-top" id="workspace">
+      <div class="drawing"><canvas id="canvas" aria-label="Plant drawing"></canvas></div>
+      <section class="plants">
+        <span id="plantListLabel">Plants</span>
+        <ul id="plantList" role="listbox" tabindex="0" aria-labelledby="plantListLabel" aria-multiselectable="true"></ul>
+      </section>
+      <section class="panels">
+        <menu role="tablist" id="tabs"></menu>
+        <div class="window panel" role="tabpanel"><div class="window-body" id="panel"></div></div>
+      </section>
+    </div>
+
+    <div class="status-bar">
+      <p class="status-bar-field" id="status">Loading</p>
+      <p class="status-bar-field" id="statusPlant"></p>
+      <p class="status-bar-field" id="statusFile"></p>
+    </div>
+    <div class="resize-grip" id="resizeGrip" title="Drag to resize"></div>
+  </main>
+
+  <input type="file" id="fileInput" accept=".pla" hidden>
+  <img id="printPicture" alt="">
+  <script type="module" src="src/ui/app.js"></script>
+</body>
+</html>
