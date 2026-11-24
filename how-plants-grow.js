@@ -881,17 +881,152 @@ function setupBreeding() {
   draw();
 }
 
+// ------------------------------------------------------------------ 12. overgrowth
+
+function setupOvergrowth() {
+  const select = $('overPlant'), canvas = $('overCanvas'), chart = $('overChart'), age = $('overAge');
+  const days = $('overDays'), rate = $('overRate'), fixed = $('overFixed');
+  const shows = [bindRange(days, (v) => `+${v}`), bindRange(rate, (v) => `${fmt(v)}%`)];
+  let base, matureFrame, plant, series, timer = null, pending = false;
+
+  const settings = () => {
+    const mode = document.querySelector('input[name="overMode"]:checked').value;
+    return { days: Number(days.value), rate: Number(rate.value) / 100, swell: mode === 'swell', wake: mode === 'wake' };
+  };
+  const overgrown = () => {
+    const p = base.copy();
+    Object.assign(p.overgrowth, settings());
+    p.reset();
+    return p;
+  };
+
+  // One pass from day 0 to the last day, recording weight and parts for the chart.
+  const record = () => {
+    const p = overgrown();
+    series = [];
+    while (p.age < p.lastDay()) {
+      p.nextDay();
+      series.push({ day: p.age, weight: p.totalBiomass_pctMPB, parts: p.partsCreated, piled: p.unallocatedNewVegetativeBiomass_pctMPB });
+    }
+  };
+
+  const W = 360, H = 240, L = 44, R = 14, T = 14, B = 34;
+  const drawChart = (day) => {
+    const last = series.length;
+    const maturity = base.pGeneral.ageAtMaturity;
+    const top = Math.max(2, Math.ceil(Math.log10(Math.max(...series.map((d) => Math.max(d.weight, d.parts))))));
+    const sx = (d) => L + (d / Math.max(1, last)) * (W - L - R);
+    const sy = (v) => H - B - (Math.log10(Math.max(1, v)) / top) * (H - T - B);
+    chart.replaceChildren();
+    for (let e = 0; e <= top; e++) {
+      chart.append(el('line', { x1: sx(0), x2: sx(last), y1: sy(10 ** e), y2: sy(10 ** e), stroke: '#e2e2e2' }));
+      chart.append(el('text', { x: L - 6, y: sy(10 ** e) + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#555' }, Number(10 ** e).toLocaleString('en')));
+    }
+    for (const d of [0, maturity, last]) {
+      chart.append(el('text', { x: sx(d), y: H - B + 14, 'text-anchor': 'middle', 'font-size': 10, fill: '#555' }, `${d}`));
+    }
+    chart.append(el('text', { x: (sx(0) + sx(last)) / 2, y: H - 4, 'text-anchor': 'middle', 'font-size': 10, fill: '#333' }, 'day (log scale up the side)'));
+    chart.append(el('rect', { x: sx(maturity), y: T, width: Math.max(0, sx(last) - sx(maturity)), height: H - T - B, fill: '#f3ece0' }));
+    chart.append(el('line', { x1: sx(maturity), x2: sx(maturity), y1: T, y2: H - B, stroke: '#9a9a9a', 'stroke-dasharray': '4 3' }));
+    const line = (key, stroke, dash) => {
+      const d = series.map((point, i) => `${i ? 'L' : 'M'}${sx(point.day).toFixed(1)},${sy(point[key]).toFixed(1)}`).join('');
+      chart.append(el('path', { d, fill: 'none', stroke, 'stroke-width': 2, ...(dash ? { 'stroke-dasharray': dash } : {}) }));
+    };
+    line('weight', '#0a6b2a');
+    line('parts', '#000080');
+    line('piled', '#b03000', '3 2');
+    chart.append(el('line', { x1: sx(day), x2: sx(day), y1: T, y2: H - B, stroke: '#000', 'stroke-dasharray': '2 2' }));
+    const labels = [['weight, % of mature', '#0a6b2a'], ['parts', '#000080'], ['unallocated, %', '#b03000']];
+    labels.forEach(([text, fill], i) => chart.append(el('text', { x: sx(0) + 6, y: T + 10 + 12 * i, 'font-size': 10, fill }, text)));
+    chart.append(el('text', { x: sx(maturity) + 4, y: H - B - 6, 'font-size': 10, fill: '#777' }, 'past maturity'));
+  };
+
+  const render = () => {
+    const day = plant.age;
+    const frame = fixed.checked ? matureFrame : frameFor(plant, canvas);
+    paintPlant(canvas, plant, frame);
+    const shrink = matureFrame.scale / frame.scale;
+    drawChart(day);
+    const maturity = base.pGeneral.ageAtMaturity;
+    $('overAgeOut').textContent = day > maturity ? `${maturity} + ${day - maturity}` : `${day} / ${maturity}`;
+    const t = tally(plant);
+    const piled = plant.unallocatedNewVegetativeBiomass_pctMPB;
+    $('overReadout').innerHTML = `On day ${day} the plant weighs <b>${Math.round(plant.totalBiomass_pctMPB).toLocaleString('en')}%</b> of its mature weight `
+      + `and has ${plant.partsCreated.toLocaleString('en')} parts: ${t.internodes} internodes, ${t.leaves} leaves, ${t.buds + t.open} flowers, ${t.unripe + t.ripe} fruit. `
+      + (piled > 1 ? `${Math.round(piled).toLocaleString('en')}% of it is weight no part could take.` : 'Every bit of its weight has gone into a part.')
+      + (plant.partsCreated > 10000 ? ' It has hit the 10,000-part limit.' : '')
+      + (shrink > 1.2 ? ` Drawn at 1/${fmt(shrink, shrink < 10 ? 1 : 0)} of the mature plant's scale.` : '');
+  };
+
+  // Regrowing a big plant takes a moment, so slider moves are coalesced into one per frame.
+  const regrowLater = (again) => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      again();
+    });
+  };
+  const showDay = () => regrowLater(() => {
+    plant = overgrown();
+    plant.setAge(Number(age.value));
+    render();
+  });
+  const rebuild = () => regrowLater(() => {
+    stop();
+    record();
+    plant = overgrown();
+    age.max = plant.lastDay();
+    age.value = age.max;
+    plant.setAge(plant.lastDay());
+    render();
+  });
+
+  function stop() {
+    clearTimeout(timer);
+    timer = null;
+    $('overPlay').textContent = 'Play';
+  }
+  $('overPlay').addEventListener('click', () => {
+    if (timer) return stop();
+    plant = overgrown();
+    $('overPlay').textContent = 'Stop';
+    const step = () => {
+      if (plant.age >= plant.lastDay()) return stop();
+      plant.nextDay();
+      age.value = plant.age;
+      render();
+      timer = setTimeout(step, 40);
+    };
+    step();
+  });
+  age.addEventListener('pointerdown', stop);
+
+  const choose = () => {
+    base = plantByKey(select.value);
+    matureFrame = frameFor(base, canvas);
+    rebuild();
+  };
+  age.addEventListener('input', showDay);
+  for (const input of [days, rate]) input.addEventListener('input', rebuild);
+  for (const radio of document.querySelectorAll('input[name="overMode"]')) radio.addEventListener('change', rebuild);
+  fixed.addEventListener('change', render);
+  select.addEventListener('change', choose);
+  shows.forEach((show) => show());
+  choose();
+}
+
 // ------------------------------------------------------------------ start
 
 await loadPlants();
 const DEFAULTS = {
   daysPlant: 'phlox', seedPlant: 'thistle', curvePlant: 'sunflower', allocPlant: 'tomato', treePlant: 'tomato',
   branchPlant: 'thistle', flowerPlant: 'tomato', turtlePlant: 'sunflower', tdoPlant: 'tomato', petalPlant: 'rose',
-  paintPlant: 'phlox', breedPlantA: 'phlox', breedPlantB: 'gilia',
+  paintPlant: 'phlox', breedPlantA: 'phlox', breedPlantB: 'gilia', overPlant: 'thistle',
 };
 for (const [id, name] of Object.entries(DEFAULTS)) fillPlantSelect($(id), name);
 fillExcerpts();
-for (const setup of [setupDays, setupSeed, setupCurve, setupAllocation, setupTree, setupBranching, setupFlowering, setupTurtle, setupObjects, setupPetals, setupPainter, setupBreeding]) {
+for (const setup of [setupDays, setupSeed, setupCurve, setupAllocation, setupTree, setupBranching, setupFlowering, setupTurtle, setupObjects, setupPetals, setupPainter, setupBreeding, setupOvergrowth]) {
   try {
     setup();
   } catch (error) {

@@ -331,17 +331,18 @@ export class Internode extends Part {
         this.nextDay();
         break;
       case Mode.DemandVegetative: {
-        if (this.age > p.maxDaysToAccumulateBiomass) {
+        const swell = this.plant.swellFactor(); // 1 unless overgrowing
+        if (swell === 1 && this.age > p.maxDaysToAccumulateBiomass) {
           this.biomassDemand = 0;
           return;
         }
-        const target = p.canRecoverFromStuntingDuringCreation ? p.optimalFinalBiomass_pctMPB : p.optimalFinalBiomass_pctMPB * this.fractionOfOptimalInitialBiomass;
+        const target = swell * (p.canRecoverFromStuntingDuringCreation ? p.optimalFinalBiomass_pctMPB : p.optimalFinalBiomass_pctMPB * this.fractionOfOptimalInitialBiomass);
         this.biomassDemand = linearGrowthResult(this.liveBiomass, target, p.minDaysToAccumulateBiomass);
         traverser.total += this.biomassDemand;
         break;
       }
       case Mode.GrowVegetative:
-        if (this.age > p.maxDaysToAccumulateBiomass) return;
+        if (this.plant.swellFactor() === 1 && this.age > p.maxDaysToAccumulateBiomass) return;
         this.newBiomassForDay = Math.max(0, this.biomassDemand * traverser.fractionOfPotentialBiomass);
         this.liveBiomass += this.newBiomassForDay;
         break;
@@ -451,21 +452,24 @@ export class Leaf extends Part {
         this.nextDay();
         break;
       case Mode.DemandVegetative: {
-        if (this.age > p.maxDaysToGrow) {
+        const swell = this.plant.swellFactor(); // 1 unless overgrowing
+        if (swell === 1 && this.age > p.maxDaysToGrow) {
           this.biomassDemand = 0;
           return;
         }
         const fractionOfMaxAge = safediv(this.age + 1, p.maxDaysToGrow, 0);
         const wanted = Math.max(0, Math.min(1, scurve(fractionOfMaxAge, p.sCurveParams.c1, p.sCurveParams.c2)));
-        this.biomassDemand = linearGrowthResult(this.liveBiomass, wanted * p.optimalBiomass_pctMPB, p.minDaysToGrow);
+        this.biomassDemand = linearGrowthResult(this.liveBiomass, swell * wanted * p.optimalBiomass_pctMPB, p.minDaysToGrow);
         traverser.total += this.biomassDemand;
         break;
       }
-      case Mode.GrowVegetative:
-        if (this.age > p.maxDaysToGrow) return;
+      case Mode.GrowVegetative: {
+        const swell = this.plant.swellFactor();
+        if (swell === 1 && this.age > p.maxDaysToGrow) return;
         this.liveBiomass += this.biomassDemand * traverser.fractionOfPotentialBiomass;
-        this.propFullSize = Math.min(1, safediv(this.totalBiomass(), p.optimalBiomass_pctMPB, 0));
+        this.propFullSize = Math.min(swell, safediv(this.totalBiomass(), p.optimalBiomass_pctMPB, 0));
         break;
+      }
       case Mode.VegetativeBiomassThatCanBeRemoved:
         traverser.total += this.liveBiomass;
         break;
@@ -649,6 +653,13 @@ export class Meristem extends Part {
       this.daysCreatingThisPlantPart++;
       if (!this.isReproductive) this.accumulateOrCreatePhytomer();
       else this.accumulateOrCreateInflorescence();
+    } else if (!this.isApical && this.plant.wakesDormantBuds()) {
+      // Overgrowth only: a waiting flower bud reverts to a shoot and starts growing.
+      if (this.isReproductive) {
+        this.count(this.isApical, this.isActive, -1);
+        this.isReproductive = false;
+      }
+      this.setIfActive(true);
     } else if (!this.isApical && !this.isReproductive && this.contemplateBranching()) {
       this.setIfActive(true);
     }

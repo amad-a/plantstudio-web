@@ -49,6 +49,12 @@ export class Plant {
     this.pFlower = [{ tdoParams: nineTdoParams() }, { tdoParams: nineTdoParams() }];
     this.pFruit = { tdoParams: blankTdoParams(), sCurveParams: blankCurve() };
     this.pRoot = { tdoParams: blankTdoParams() };
+    // Not in the original and not saved in .pla files: lets a plant keep growing past
+    // maturity for `days` more days, its weight multiplied by (1 + rate) each day. With
+    // `swell`, parts that have stopped growing take biomass again and get bigger; with
+    // `wake`, weight that no part can take wakes dormant buds into new shoots. Off
+    // (days 0) the model is the original's, unchanged.
+    this.overgrowth = { days: 0, rate: 0, swell: false, wake: false };
 
     this.reset();
   }
@@ -78,9 +84,26 @@ export class Plant {
   }
 
   setAge(newAge) {
-    const target = clamp(newAge, 0, this.pGeneral.ageAtMaturity);
+    const target = clamp(newAge, 0, this.lastDay());
     this.reset();
     while (this.age < target) this.nextDay();
+  }
+
+  lastDay() {
+    return this.pGeneral.ageAtMaturity + Math.max(0, this.overgrowth.days);
+  }
+
+  // How many times its mature weight an overgrowing plant has reached, if its old parts
+  // swell; 1 if not. Parts multiply their own optimal size by it.
+  swellFactor() {
+    if (!this.overgrowth.swell || this.age < this.pGeneral.ageAtMaturity) return 1;
+    return Math.max(1, this.totalBiomass_pctMPB / 100);
+  }
+
+  // True when an overgrowing plant has weight left over that no part could take.
+  wakesDormantBuds() {
+    const o = this.overgrowth;
+    return o.wake && this.age >= this.pGeneral.ageAtMaturity && this.unallocatedNewVegetativeBiomass_pctMPB > 0;
   }
 
   regrow() {
@@ -90,12 +113,14 @@ export class Plant {
   nextDay() {
     const g = this.pGeneral;
     const fractionToMaturity = safediv(this.age, g.ageAtMaturity, 0);
-    const newTotal = clamp(100 * scurve(fractionToMaturity, g.growthSCurve.c1, g.growthSCurve.c2), 0, 100);
+    let newTotal = clamp(100 * scurve(fractionToMaturity, g.growthSCurve.c1, g.growthSCurve.c2), 0, 100);
+    const daysPastMaturity = this.age - g.ageAtMaturity + 1;
+    if (daysPastMaturity > 0) newTotal *= (1 + this.overgrowth.rate) ** daysPastMaturity; // overgrowth only
     const changeInTotal = newTotal - this.totalBiomass_pctMPB;
     this.totalBiomass_pctMPB = newTotal;
     if (this.floweringHasStarted) {
       const fractionRepro = Math.max(0, g.fractionReproductiveAllocationAtMaturity_frn
-        * safediv(this.age - this.ageAtWhichFloweringStarted, g.ageAtMaturity - this.ageAtWhichFloweringStarted, 0));
+        * Math.min(1, safediv(this.age - this.ageAtWhichFloweringStarted, g.ageAtMaturity - this.ageAtWhichFloweringStarted, 0)));
       const newRepro = fractionRepro * this.totalBiomass_pctMPB;
       this.changeInReproBiomassToday_pctMPB = newRepro - this.reproBiomass_pctMPB;
       this.reproBiomass_pctMPB = newRepro;
@@ -241,7 +266,7 @@ export class Plant {
   finishLoading() {
     const g = this.pGeneral;
     g.ageAtWhichFloweringStarts = Math.min(g.ageAtWhichFloweringStarts, g.ageAtMaturity);
-    this.age = Math.min(this.age, g.ageAtMaturity);
+    this.age = Math.min(this.age, this.lastDay());
     calcSCurveCoeffs(g.growthSCurve);
     calcSCurveCoeffs(this.pFruit.sCurveParams);
     calcSCurveCoeffs(this.pLeaf.sCurveParams);
@@ -256,6 +281,7 @@ export class Plant {
     }
     plant.noteLines = [...this.noteLines];
     plant.amendments = this.amendments.map((amendment) => ({ ...amendment }));
+    plant.overgrowth = { ...this.overgrowth };
     plant.finishLoading();
     return plant;
   }

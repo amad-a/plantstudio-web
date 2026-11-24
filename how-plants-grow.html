@@ -31,6 +31,7 @@
         <li><a href="#objects">Leaves and petals are 3D objects</a></li>
         <li><a href="#painter">Pixels: sorting and rasterizing</a></li>
         <li><a href="#breeding">Breeding</a></li>
+        <li><a href="#overgrowth">Past the curve: overgrowth</a></li>
       </ol>
       <p class="note">Open <a href="plantstudio-main.html">PlantStudio</a> itself to edit any of these parameters on the plants.</p>
     </div>
@@ -163,6 +164,11 @@
             weeks. The same
             S-curve function also sets how fast each leaf and each fruit fills out, each with its
             own pair of points.
+          </p>
+          <p>
+            No choice of points gets past 100%: the curve only ever approaches 1, and the program
+            stops the clock at maturity anyway. <a href="#overgrowth">Section 12</a> takes both
+            limits away to see what the rest of the model does with more.
           </p>
         </div>
       </div>
@@ -489,6 +495,94 @@
           <p>
             Colours are blended the way the original did it, as a single number holding red, green
             and blue, which is why bred plants sometimes come out in colours neither parent has.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="window" id="overgrowth">
+      <div class="title-bar"><div class="title-bar-text">12. Past the curve: overgrowth</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p class="note">
+            This section isn't PlantStudio as written. It's a small switch added to this port's
+            engine, off unless a page turns it on, which lets a plant keep growing after the
+            original would have stopped it. With the switch off, every bundled plant draws exactly
+            as it did before.
+          </p>
+          <p>
+            A plant in PlantStudio stops growing in three places. The clock stops at the age of
+            maturity. The <a href="#curve">S-curve</a> can't go above 100% of the mature weight.
+            And each part has its own limits: a stem or leaf only takes biomass for so many days,
+            and only up to its own optimal weight. Overgrowth lets the clock run on and multiplies
+            the plant's weight by the same amount every day past maturity, with no ceiling:
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/plant.js" data-from="  nextDay() {" data-to="    const changeInTotal"></pre>
+        <div class="prose">
+          <p>
+            That alone does very little to most plants. <a href="#allocate">Allocation</a> only
+            hands out what parts ask for. In most plants, by maturity every leaf and stem has
+            stopped asking, and every waiting bud has been committed to a flower. So the new
+            weight goes into a pile marked <i>unallocated</i> and stays there. To use it, the
+            model needs somewhere to put it. Choose one of two places below.
+          </p>
+          <p>
+            <b>Old parts swell.</b> Stems and leaves forget their day limits and aim for a multiple
+            of their optimal weight, the multiple being how many times its mature weight the plant
+            now has:
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/plant.js" data-from="  swellFactor() {"></pre>
+        <div class="prose">
+          <p>
+            <b>Dormant buds wake.</b> While weight is left over, every side bud that's waiting
+            starts growing, and a bud that was waiting to be a flower turns back into a shoot.
+            Real plants do this too: it's called <i>floral reversion</i>, and it's where flowers
+            with leafy shoots growing out of their middles come from.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/parts.js" data-from="    } else if (!this.isApical &amp;&amp; this.plant.wakesDormantBuds()) {" data-to="    } else if (!this.isApical &amp;&amp; !this.isReproductive"></pre>
+        <div class="demo">
+          <div class="stage stack">
+            <svg id="overChart" viewBox="0 0 360 240" role="img" aria-label="Weight and parts by day, on a log scale"></svg>
+            <canvas id="overCanvas" width="360" height="360"></canvas>
+          </div>
+          <div class="controls">
+            <div class="field-row"><label for="overPlant">Plant</label><select id="overPlant"></select></div>
+            <div class="field-row"><label for="overDays">Extra days</label><input id="overDays" type="range" min="0" max="300" step="10" value="150"><output></output></div>
+            <div class="field-row"><label for="overRate">Daily growth</label><input id="overRate" type="range" min="0" max="8" step="0.5" value="3"><output></output></div>
+            <fieldset>
+              <legend>Extra weight goes to</legend>
+              <div class="field-row"><input type="radio" name="overMode" id="overNone" value="none"><label for="overNone">Nothing (the original's rules)</label></div>
+              <div class="field-row"><input type="radio" name="overMode" id="overSwell" value="swell"><label for="overSwell">Old parts swell</label></div>
+              <div class="field-row"><input type="radio" name="overMode" id="overWake" value="wake" checked><label for="overWake">Dormant buds wake</label></div>
+            </fieldset>
+            <div class="field-row"><input type="checkbox" id="overFixed"><label for="overFixed">Draw at the mature plant's scale</label></div>
+            <div class="field-row">
+              <button id="overPlay">Play</button>
+              <label for="overAge">Day</label>
+              <input id="overAge" type="range" min="0" max="100" value="100">
+              <output id="overAgeOut"></output>
+            </div>
+            <p class="readout" id="overReadout"></p>
+          </div>
+        </div>
+        <div class="prose">
+          <p>
+            Swelling makes a giant of the same plant: it keeps its shape and just gets bigger,
+            because each part's length and width follow its weight. Waking buds makes an overgrown
+            one: new shoots from every old flower bud, each making leaves and new buds of its own.
+            A plant past its flowering age makes its new buds into flower buds, but while weight is
+            left over those are woken into shoots too, the day after they appear. So the number of
+            parts grows about as fast as the weight does, the old flowers turn to fruit, and no new
+            ones ever open: the plant becomes all stem and leaf.
+          </p>
+          <p>
+            The model has one more limit underneath all of these: the original never makes more
+            than 10,000 parts in one plant. That cap still holds here, and at high growth rates
+            the plant hits it, flattening the parts line on the chart while the weight carries on
+            upward with nothing left to put it in.
           </p>
         </div>
       </div>
