@@ -7,7 +7,7 @@ Win98-style pixels, in an interface built with [98.css](https://jdan.github.io/9
 **Try it at [palestineonline.net/plant](https://palestineonline.net/plant/).** To run your own copy:
 
 ```sh
-python3 -m http.server 8123 --bind 127.0.0.1   # then open http://127.0.0.1:8123
+python3 -m http.server 8123 --bind 127.0.0.1   # then open http://127.0.0.1:8123/plantstudio-main.html
 ```
 
 It's static files with no build step. It has to be served over HTTP because ES modules don't
@@ -129,8 +129,8 @@ Limits on accuracy:
 node test/smoke.mjs        # every plant grows and draws
 node test/roundtrip.mjs    # saving and copying change nothing
 node test/features.mjs     # posing, OBJ export, wizard logic, 3D object edits
-node test/browser-check.mjs http://127.0.0.1:8123 /tmp/shots      # the main window in real Chrome
-node test/browser-features.mjs http://127.0.0.1:8123 /tmp/shots   # the feature windows in real Chrome
+node test/browser-check.mjs http://127.0.0.1:8123/plantstudio-main.html /tmp/shots      # the main window in real Chrome
+node test/browser-features.mjs http://127.0.0.1:8123/plantstudio-main.html /tmp/shots   # the feature windows in real Chrome
 ```
 
 The browser tests import Playwright from a local path; change that line to match your machine.

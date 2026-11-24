@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How PlantStudio Grows a Plant</title>
+  <link rel="icon" href="icons/BreederForm_varyColors.png">
+  <link rel="stylesheet" href="vendor/98.css/98.css">
+  <link rel="stylesheet" href="how-plants-grow.css">
+</head>
+<body>
+  <header class="intro window">
+    <div class="title-bar"><div class="title-bar-text">How PlantStudio grows a plant</div></div>
+    <div class="window-body prose">
+      <p>
+        A PlantStudio plant isn't a drawing. It's about 350 numbers and a random seed. The program
+        <b>grows</b> those numbers into a branching structure one simulated day at a time, then
+        <b>draws</b> the structure with a 3D turtle. Every picture on this page is drawn by the
+        program's own engine (<code>src/model/</code>), running live in your browser, and every
+        code excerpt is read from the source as it is now.
+      </p>
+      <ol class="toc">
+        <li><a href="#days">A plant is a sequence of days</a></li>
+        <li><a href="#seed">The seed</a></li>
+        <li><a href="#curve">How much to grow: the S-curve</a></li>
+        <li><a href="#allocate">Who gets it: biomass allocation</a></li>
+        <li><a href="#phytomers">Meristems build phytomers</a></li>
+        <li><a href="#branching">Branching and apical dominance</a></li>
+        <li><a href="#flowering">Flowers and fruit</a></li>
+        <li><a href="#turtle">Drawing: the turtle walk</a></li>
+        <li><a href="#objects">Leaves and petals are 3D objects</a></li>
+        <li><a href="#painter">Pixels: sorting and rasterizing</a></li>
+        <li><a href="#breeding">Breeding</a></li>
+      </ol>
+      <p class="note">Open <a href="plantstudio-main.html">PlantStudio</a> itself to edit any of these parameters on the plants.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="window" id="days">
+      <div class="title-bar"><div class="title-bar-text">1. A plant is a sequence of days</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            A plant has an <i>age at maturity</i> (100 days for most). To show a plant at day 40, the
+            program starts from nothing and runs <code>nextDay()</code> forty times. Nothing is stored
+            between ages: a plant at any age is recomputed from day zero, the same way every time.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/plant.js" data-from="  setAge(newAge) {"></pre>
+        <div class="demo">
+          <div class="stage"><canvas id="daysCanvas" width="360" height="360"></canvas></div>
+          <div class="controls">
+            <div class="field-row"><label for="daysPlant">Plant</label><select id="daysPlant"></select></div>
+            <div class="field-row">
+              <button id="daysPlay">Play</button>
+              <label for="daysAge">Day</label>
+              <input id="daysAge" type="range" min="0" max="100" value="100">
+              <output id="daysAgeOut"></output>
+            </div>
+            <ul class="tree-view stats" id="daysStats"></ul>
+          </div>
+        </div>
+        <div class="prose">
+          <p>Each day does four things, in this order:</p>
+        </div>
+        <pre class="code" data-file="src/model/plant.js" data-from="  nextDay() {"></pre>
+        <div class="prose">
+          <p>
+            A day works out how much the plant as a whole should weigh now (section 3), shares the
+            difference out among its parts (section 4), and then lets every part take its own day:
+            meristems may build new stem, flowers open, fruit ripens. Weights are in
+            <b>% of mature plant biomass</b> (<code>_pctMPB</code>), so a full-grown plant weighs
+            close to 100.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="window" id="seed">
+      <div class="title-bar"><div class="title-bar-text">2. The seed</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            Plants vary: a stem curves a little more or less, a branch does or doesn't start, a
+            petal sways. All of that comes from one pseudo-random generator, Park and Miller's
+            "minimal standard" generator from 1988, started from a seed stored in the plant file.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/support.js" data-from="export class Random {" data-to="  zeroToOne() {"></pre>
+        <div class="prose">
+          <p>
+            Every new part draws a number for its sway as it's created, and every branching decision
+            draws another. Because the seed is reset at day zero, the same seed always grows the same
+            plant. That also means <b>the order of every random call is part of the file format</b>:
+            the port had to make exactly the same calls in exactly the same order as the 2002
+            program, or the saved plants would grow into different shapes.
+          </p>
+        </div>
+        <div class="demo two">
+          <figure><canvas id="seedA" width="300" height="300"></canvas><figcaption id="seedACap"></figcaption></figure>
+          <figure><canvas id="seedB" width="300" height="300"></canvas><figcaption id="seedBCap"></figcaption></figure>
+          <div class="controls wide">
+            <div class="field-row"><label for="seedPlant">Plant</label><select id="seedPlant"></select><button id="seedNew">New seed</button></div>
+            <p class="readout">First numbers from the new seed: <code id="seedNumbers"></code></p>
+          </div>
+        </div>
+        <div class="prose">
+          <p>
+            The two plants share every other parameter. The differences are all chance, but it's
+            reproducible chance: press the button for the same seed again and you get the same plant.
+            Normally distributed values (used for curving and for breeding) are made from twelve of
+            these numbers at once:
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/support.js" data-from="  normalWithStdDev(mean, stdDev) {"></pre>
+        <div class="prose">
+          <p>
+            Adding up twelve uniform numbers between 0 and 1 gives a mean of 6 and a standard
+            deviation of exactly 1, and the sum is very close to a bell curve. It's an old trick
+            that needs no square roots or logarithms.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="window" id="curve">
+      <div class="title-bar"><div class="title-bar-text">3. How much to grow: the S-curve</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            Real plants grow slowly at first, quickly in the middle, and slowly again near maturity.
+            PlantStudio's growth curve says what fraction of its mature weight the plant should have
+            reached for each fraction of its life. The curve is set by two points it passes through,
+            and the program turns those into two coefficients once, when the plant loads:
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/support.js" data-from="export function scurve(x, c1, c2) {" data-to="// A growth step"></pre>
+        <div class="demo">
+          <div class="stage stack">
+            <svg id="curveChart" viewBox="0 0 360 240" role="img" aria-label="Growth curve"></svg>
+            <canvas id="curveCanvas" width="360" height="300"></canvas>
+          </div>
+          <div class="controls">
+            <div class="field-row"><label for="curvePlant">Plant</label><select id="curvePlant"></select></div>
+            <fieldset>
+              <legend>The curve's two points</legend>
+              <div class="field-row"><label for="curveX1">x1</label><input id="curveX1" type="range" min="0.05" max="0.95" step="0.01"><output></output></div>
+              <div class="field-row"><label for="curveY1">y1</label><input id="curveY1" type="range" min="0.02" max="0.98" step="0.01"><output></output></div>
+              <div class="field-row"><label for="curveX2">x2</label><input id="curveX2" type="range" min="0.05" max="0.95" step="0.01"><output></output></div>
+              <div class="field-row"><label for="curveY2">y2</label><input id="curveY2" type="range" min="0.02" max="0.98" step="0.01"><output></output></div>
+              <button id="curveReset">Plant's own curve</button>
+            </fieldset>
+            <div class="field-row"><label for="curveAge">Day</label><input id="curveAge" type="range" min="0" max="100" value="50"><output id="curveAgeOut"></output></div>
+            <p class="readout" id="curveReadout"></p>
+          </div>
+        </div>
+        <div class="prose">
+          <p>
+            Move the points and the plant under the chart is regrown under the new curve. The
+            bundled plants' curves level off close to the top by maturity; other points can make a
+            plant that never reaches full size, or one that does nearly all its growing in its first
+            weeks. The same
+            S-curve function also sets how fast each leaf and each fruit fills out, each with its
+            own pair of points.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="window" id="allocate">
+      <div class="title-bar"><div class="title-bar-text">4. Who gets it: biomass allocation</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            The curve says how much the whole plant gains today. That gain is shared out with an
+            "ask, then tell" pair of walks over the plant. First every growing part is asked how
+            much it wants (its <i>demand</i>), and the answers are added up. Then each part is told
+            to take the same fraction of what it asked for: all of it if there's enough, less if
+            there isn't. Anything left over is carried to the next day.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/plant.js" data-from="  allocate(amount, undistributed, askingMode, tellingMode, traverser) {"></pre>
+        <div class="prose">
+          <p>
+            A part's demand is how far it is from the size it's aiming for, but never more than it
+            could grow in a day: an internode that needs at least 5 days to fill out asks for at
+            most a fifth of its full weight each day.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/support.js" data-from="export function linearGrowthResult(current, optimal, minDays) {"></pre>
+        <div class="demo">
+          <div class="stage"><svg id="allocChart" viewBox="0 0 360 230" role="img" aria-label="Demand and supply for one day"></svg></div>
+          <div class="controls">
+            <div class="field-row"><label for="allocPlant">Plant</label><select id="allocPlant"></select></div>
+            <div class="field-row"><label for="allocAge">Day</label><input id="allocAge" type="range" min="1" max="99" value="30"><output id="allocAgeOut"></output></div>
+            <p class="readout" id="allocReadout"></p>
+          </div>
+        </div>
+        <div class="prose">
+          <p>
+            The numbers above come from running that day of the real plant with a probe on
+            <code>allocate()</code>. Shoot growth (stems, leaves, buds) and reproductive growth
+            (flowers, fruit) are shared out separately. Once flowering starts, a growing share of each
+            day's gain goes to reproduction, until at maturity it reaches the plant's
+            <i>fraction of biomass in reproductive structures</i>.
+          </p>
+        </div>
+        <div class="demo">
+          <div class="stage full"><svg id="seriesChart" viewBox="0 0 720 260" role="img" aria-label="Parts over the plant's life"></svg></div>
+        </div>
+        <div class="prose"><p class="note" id="seriesNote"></p></div>
+      </div>
+    </section>
+
+    <section class="window" id="phytomers">
+      <div class="title-bar"><div class="title-bar-text">5. Meristems build phytomers</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            A plant is built from repeated units botanists call <b>phytomers</b>: a length of stem
+            (an <i>internode</i>), the leaf or pair of leaves at its top, and a bud in the angle of
+            each leaf. The buds are <b>meristems</b>, the growing points. The meristem at the tip of a
+            stem (the <i>apical</i> meristem) collects biomass, and once it has enough for a whole
+            phytomer it builds one beneath itself and moves up to its top:
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/parts.js" data-from="  accumulateOrCreatePhytomer() {"></pre>
+        <pre class="code" data-file="src/model/parts.js" data-from="  createPhytomer(fractionOfFullSize) {" data-to="    } else {"></pre>
+        <div class="prose">
+          <p>
+            So the data structure is a tree. Each internode has three slots: <code>nextPlantPart</code>
+            (the stem carrying on), and <code>leftBranchPlantPart</code> and
+            <code>rightBranchPlantPart</code> (the side buds, which may become branches or flower
+            stalks). Below is that tree for a real plant, laid out flat so you can see the parts
+            instead of the plant:
+          </p>
+        </div>
+        <div class="demo">
+          <div class="stage"><svg id="treeChart" viewBox="0 0 360 380" role="img" aria-label="The plant's part tree"></svg></div>
+          <div class="controls">
+            <div class="field-row"><label for="treePlant">Plant</label><select id="treePlant"></select></div>
+            <div class="field-row"><button id="treePlay">Play</button><label for="treeAge">Day</label><input id="treeAge" type="range" min="1" max="100" value="40"><output id="treeAgeOut"></output></div>
+            <ul class="legend" id="treeLegend"></ul>
+            <p class="readout" id="treeReadout"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="window" id="branching">
+      <div class="title-bar"><div class="title-bar-text">6. Branching and apical dominance</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            Each day, every side bud that isn't growing yet considers becoming a branch. The chance
+            is the plant's <i>branching index</i>, but in a real plant the growing tip releases a
+            hormone that holds back buds close to it (<i>apical dominance</i>). PlantStudio models
+            that with distance: a bud fewer than <i>branching distance</i> internodes below the tip
+            gets a proportionally smaller chance.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/parts.js" data-from="  contemplateBranching() {"></pre>
+        <div class="demo">
+          <div class="stage"><canvas id="branchCanvas" width="360" height="360"></canvas></div>
+          <div class="controls">
+            <div class="field-row"><label for="branchPlant">Plant</label><select id="branchPlant"></select></div>
+            <div class="field-row"><label for="branchIndex">Branching index</label><input id="branchIndex" type="range" min="0" max="100" step="1"><output></output></div>
+            <div class="field-row"><label for="branchDistance">Branching distance</label><input id="branchDistance" type="range" min="0" max="20" step="1"><output></output></div>
+            <div class="field-row"><label for="branchAngle">Branching angle</label><input id="branchAngle" type="range" min="0" max="64" step="1"><output></output></div>
+            <button id="branchReset">Plant's own values</button>
+            <p class="readout" id="branchReadout"></p>
+          </div>
+        </div>
+        <div class="prose">
+          <p>
+            A branch, once started, is just another stem with its own apical meristem, so it grows
+            phytomers the same way. Whether branches can branch again is one more yes/no parameter.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="window" id="flowering">
+      <div class="title-bar"><div class="title-bar-text">7. Flowers and fruit</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            On the day the plant reaches its <i>age at which flowering starts</i>, every meristem
+            gets a flowering signal, and each one becomes reproductive with a set probability. A
+            reproductive meristem stops making stem and starts collecting biomass for an
+            <b>inflorescence</b>, a flower stalk, which then makes its flowers a few at a time.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/parts.js" data-from="  startReproduction() {"></pre>
+        <div class="prose">
+          <p>
+            Each flower is a small state machine. It starts as a bud, opens once it has enough
+            biomass and is old enough, and if it's a female flower that lives long enough it sets
+            fruit, which ripens after a set number of days. Setting fruit throws away half the
+            flower's weight, as the petals do.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/parts.js" data-from="    switch (this.stage) {" data-to="  traverseActivity(mode, traverser) {"></pre>
+        <div class="demo">
+          <div class="stage"><canvas id="flowerCanvas" width="360" height="360"></canvas></div>
+          <div class="controls">
+            <div class="field-row"><label for="flowerPlant">Plant</label><select id="flowerPlant"></select></div>
+            <div class="field-row"><button id="flowerPlay">Play</button><label for="flowerAge">Day</label><input id="flowerAge" type="range" min="0" max="100"><output id="flowerAgeOut"></output></div>
+            <div class="stages" id="flowerStages"></div>
+            <p class="readout" id="flowerReadout"></p>
+          </div>
+        </div>
+        <div class="prose">
+          <p class="note">
+            One quirk kept on purpose: an inflorescence ages its flowers in its own <code>nextDay()</code>,
+            and the day's walk then ages them again, so flowers age twice a day. The bundled plants
+            were tuned with that behaviour, so changing it would change them.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="window" id="turtle">
+      <div class="title-bar"><div class="title-bar-text">8. Drawing: the turtle walk</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            Once the day's growth is done, the tree is drawn by walking it with a <b>turtle</b>: a
+            pen with a position and a direction in 3D, kept as a 3×3 rotation matrix plus a point.
+            Each internode turns the turtle a little and draws forward its current length; each
+            branch saves the turtle's state with <code>push()</code> and gets it back with
+            <code>pop()</code>, so the branch's turns don't affect the stem above it.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/turtle.js" data-from="  push() {" data-to="  moveInMillimeters"></pre>
+        <div class="prose">
+          <p>
+            Angles are not degrees. A full turn is 256 steps, and sine and cosine come from a table
+            of 256 entries made once at start-up, which was much faster than calling
+            <code>sin()</code> on a 1990s PC. Rotations in degrees, like the plant's own turn and
+            the angle between successive leaves, are converted with <code>× 256 / 360</code>; most
+            angle parameters (branching, leaf and flower angles) go to the turtle as they are.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/turtle.js" data-from="const TRIG_SIZE = 256;" data-to="class Matrix {"></pre>
+        <div class="prose">
+          <p>
+            Two drawing parameters make a big difference. Between one phytomer and the next the
+            turtle rolls around the stem by the <b>phyllotactic angle</b>. Most plants use about
+            137.5°, the golden angle, which spreads leaves so none sits right above another. And each
+            internode is drawn as a few shorter segments, sharing its bend between them, so stems
+            curve instead of kinking:
+          </p>
+        </div>
+        <div class="demo">
+          <div class="stage"><canvas id="turtleCanvas" width="360" height="360"></canvas></div>
+          <div class="controls">
+            <div class="field-row"><label for="turtlePlant">Plant</label><select id="turtlePlant"></select></div>
+            <div class="field-row"><label for="turtlePhyllo">Phyllotactic angle</label><input id="turtlePhyllo" type="range" min="0" max="360" step="0.5"><output></output></div>
+            <div class="field-row"><label for="turtleDivisions">Segments per internode</label><input id="turtleDivisions" type="range" min="1" max="10" step="1"><output></output></div>
+            <div class="field-row"><label for="turtleCurving">Curving index</label><input id="turtleCurving" type="range" min="0" max="100" step="1"><output></output></div>
+            <div class="field-row"><label for="turtleSpin">Turn the plant</label><input id="turtleSpin" type="range" min="-180" max="180" step="1" value="0"><output></output></div>
+            <button id="turtleReset">Plant's own values</button>
+          </div>
+        </div>
+        <div class="prose">
+          <p>
+            The walk itself is a loop, not recursion, so a very long stem can't overflow the
+            stack. Each internode remembers which of its three slots it's visiting next:
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/parts.js" data-from="    for (;;) {"></pre>
+      </div>
+    </section>
+
+    <section class="window" id="objects">
+      <div class="title-bar"><div class="title-bar-text">9. Leaves and petals are 3D objects</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            Stems are lines, but leaves, petals, sepals, fruit and buds are small triangle meshes
+            (<i>3D objects</i>, <code>.tdo</code>), stored in the plant file as points and triangles.
+            When a part draws one, every point is run through the turtle's current matrix and
+            scaled by how grown the part is, so the same leaf shape appears at every node, turned
+            and sized for where it is.
+          </p>
+        </div>
+        <div class="demo three">
+          <figure><canvas id="tdoLeaf" width="200" height="200"></canvas><figcaption id="tdoLeafCap"></figcaption></figure>
+          <figure><canvas id="tdoPetal" width="200" height="200"></canvas><figcaption id="tdoPetalCap"></figcaption></figure>
+          <figure><canvas id="tdoFruit" width="200" height="200"></canvas><figcaption id="tdoFruitCap"></figcaption></figure>
+          <div class="controls wide"><div class="field-row"><label for="tdoPlant">Plant</label><select id="tdoPlant"></select></div></div>
+        </div>
+        <pre class="code" data-file="src/model/tdo.js" data-from="  draw(turtle, scale, partID) {"></pre>
+        <div class="prose">
+          <p>
+            A flower is rings of these objects: pistils, stamens, up to five rows of petals, and
+            sepals. Each ring turns the turtle around the flower's axis between copies, sharing out
+            the 256 steps of a full turn so that a ring of any count closes evenly, then tips each
+            copy back by its <i>pull-back angle</i> so it opens out.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/parts.js" data-from="class TurnSharer {"></pre>
+        <div class="demo">
+          <div class="stage"><canvas id="petalCanvas" width="360" height="360"></canvas></div>
+          <div class="controls">
+            <div class="field-row"><label for="petalPlant">Plant</label><select id="petalPlant"></select></div>
+            <div class="field-row"><label for="petalCount">Petals</label><input id="petalCount" type="range" min="0" max="30" step="1"><output></output></div>
+            <div class="field-row"><label for="petalPull">Pull-back angle</label><input id="petalPull" type="range" min="0" max="64" step="1"><output></output></div>
+            <button id="petalReset">Plant's own values</button>
+            <p class="readout">The picture is zoomed in on the plant's highest open flower.</p>
+          </div>
+        </div>
+        <div class="prose">
+          <p class="note">
+            Daisies and sunflowers are drawn differently. What looks like one flower is a
+            <i>head</i>: an inflorescence that arranges many small flowers in a ring, each drawn
+            with a single petal, the way the real plants are built.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="window" id="painter">
+      <div class="title-bar"><div class="title-bar-text">10. Pixels: sorting and rasterizing</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            The turtle walk produces a list of lines and triangles in 3D, in the order the walk met
+            them. Drawn in that order, a leaf behind the stem could be painted over it. So, like
+            most 3D programs of its time, PlantStudio uses the <b>painter's algorithm</b>: sort
+            everything by depth and paint from the back to the front, letting nearer things cover
+            farther ones. Each 3D object is sorted as one piece, so a leaf never comes out
+            interleaved with itself.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/surface.js" data-from="  finish() {"></pre>
+        <div class="demo">
+          <div class="stage"><canvas id="paintCanvas" width="360" height="360"></canvas></div>
+          <div class="controls">
+            <div class="field-row"><label for="paintPlant">Plant</label><select id="paintPlant"></select></div>
+            <div class="field-row"><button id="paintWalk">Paint in walk order</button><button id="paintSorted">Paint back to front</button></div>
+            <div class="field-row"><label for="paintMode">Mode</label><select id="paintMode"><option value="solids">Solids</option><option value="frames">Wire frames</option><option value="boxes">Boxes</option></select></div>
+            <p class="readout" id="paintReadout"></p>
+          </div>
+        </div>
+        <div class="prose">
+          <p>
+            The pixels themselves come from a small software rasterizer instead of the browser's
+            canvas drawing, because a canvas smooths every edge and the 1990s Windows look depends
+            on hard ones. Lines use Bresenham's algorithm (with a disc stamped along them for wide
+            stems, like Windows' round pens), and triangles are filled one horizontal span at a time:
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/surface.js" data-from="  fillTriangle(ax, ay, bx, by, cx, cy, color) {"></pre>
+      </div>
+    </section>
+
+    <section class="window" id="breeding">
+      <div class="title-bar"><div class="title-bar-text">11. Breeding</div></div>
+      <div class="window-body">
+        <div class="prose">
+          <p>
+            Since a plant is only numbers, breeding two plants is arithmetic. For each parameter the
+            child takes a weighted average of its parents, then adds a random nudge drawn from a
+            bell curve whose width is set by the mutation strength. Yes/no and choice parameters, 3D
+            objects and curves come whole from one parent or the other.
+          </p>
+        </div>
+        <pre class="code" data-file="src/model/plant.js" data-from="      case 'float': {" data-to="      case 'color':"></pre>
+        <div class="demo breed">
+          <div class="parents">
+            <figure><canvas id="breedA" width="150" height="150"></canvas><figcaption><select id="breedPlantA"></select></figcaption></figure>
+            <span class="times">×</span>
+            <figure><canvas id="breedB" width="150" height="150"></canvas><figcaption><select id="breedPlantB"></select></figcaption></figure>
+          </div>
+          <div class="controls wide">
+            <div class="field-row">
+              <label for="breedMutation">Mutation</label>
+              <select id="breedMutation"><option value="0">None</option><option value="20" selected>Low</option><option value="60">Medium</option><option value="100">High</option></select>
+              <label for="breedWeight">Like first parent</label><input id="breedWeight" type="range" min="0" max="100" value="50"><output></output>
+              <button id="breedAgain">Breed again</button>
+            </div>
+          </div>
+          <div class="children" id="breedChildren"></div>
+        </div>
+        <div class="prose">
+          <p>
+            Colours are blended the way the original did it, as a single number holding red, green
+            and blue, which is why bred plants sometimes come out in colours neither parent has.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="prose">
+    <p>
+      PlantStudio was written by Cynthia F. Kurtz and Paul D. Fernhout (1993–2011, GPL v3 or later).
+      This page is part of <a href="plantstudio-main.html">PlantStudio for the web</a>; see its README for how the
+      port was made and checked against the original.
+    </p>
+  </footer>
+
+  <script type="module" src="how-plants-grow.js"></script>
+</body>
+</html>
