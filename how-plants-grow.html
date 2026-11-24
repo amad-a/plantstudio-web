@@ -543,8 +543,8 @@
           </p>
         </div>
         <pre class="code" data-file="src/model/parts.js" data-from="    } else if (!this.isApical &amp;&amp; this.plant.wakesDormantBuds()) {" data-to="    } else if (!this.isApical &amp;&amp; !this.isReproductive"></pre>
-        <div class="demo">
-          <div class="stage">
+        <div class="demo" id="overDemo">
+          <div class="stage over-chart">
             <svg id="overChart" viewBox="0 0 360 240" role="img" aria-label="Weight and parts by day, on a log scale"></svg>
           </div>
           <div class="controls">
@@ -561,13 +561,14 @@
             <div class="field-row"><input type="checkbox" id="overFixed"><label for="overFixed">Draw at the mature plant's scale (overgrowth runs off the edges)</label></div>
             <div class="field-row">
               <button id="overPlay">Play</button>
+              <button id="overFull" hidden>Full screen</button>
               <label for="overAge">Day</label>
               <input id="overAge" type="range" min="0" max="100" value="100">
               <output id="overAgeOut"></output>
             </div>
             <p class="readout" id="overReadout"></p>
           </div>
-          <div class="stage full"><canvas id="overCanvas" width="860" height="620"></canvas></div>
+          <div class="stage full over-canvas"><canvas id="overCanvas" width="860" height="620"></canvas></div>
         </div>
         <div class="prose">
           <p>

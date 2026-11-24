@@ -889,7 +889,7 @@ function setupOvergrowth() {
   const shows = [bindRange(days, (v) => `+${v}`), bindRange(rate, (v) => `${fmt(v)}%`)];
   // The plant is drawn at one scale for every day: by default the scale that fits it on
   // its last day, so it grows across the canvas instead of the view zooming out.
-  let base, matureFrame, lastFrame, plant, series, timer = null, pending = false;
+  let base, matureFrame, lastFrame, lastPlant, plant, series, timer = null;
 
   const settings = () => {
     const mode = document.querySelector('input[name="overMode"]:checked').value;
@@ -910,8 +910,43 @@ function setupOvergrowth() {
       p.nextDay();
       series.push({ day: p.age, weight: p.totalBiomass_pctMPB, parts: p.partsCreated, piled: p.unallocatedNewVegetativeBiomass_pctMPB });
     }
+    lastPlant = p;
     lastFrame = frameFor(p, canvas);
   };
+
+  // The canvas has as many pixels as the screen shows it at (more on high-density
+  // screens, and the whole screen in full screen), up to a cap: a raster costs about 10
+  // bytes a pixel and drawing time grows with it. Outside full screen it keeps 860:620.
+  const MAX_PIXELS = 4_000_000;
+  const demo = $('overDemo');
+  const sizeCanvas = () => {
+    const full = document.fullscreenElement === demo;
+    const cssWidth = canvas.clientWidth;
+    const cssHeight = full ? canvas.clientHeight : (cssWidth * 620) / 860;
+    if (!cssWidth || !cssHeight) return false;
+    const ratio = Math.min(window.devicePixelRatio || 1, Math.sqrt(MAX_PIXELS / (cssWidth * cssHeight)));
+    const width = Math.round(cssWidth * ratio), height = Math.round(cssHeight * ratio);
+    if (canvas.width === width && canvas.height === height) return false;
+    canvas.width = width;
+    canvas.height = height;
+    return true;
+  };
+  const refit = () => {
+    if (!sizeCanvas() || !base) return;
+    matureFrame = frameFor(base, canvas);
+    lastFrame = frameFor(lastPlant, canvas);
+    render();
+  };
+  new ResizeObserver(() => requestAnimationFrame(refit)).observe(canvas.parentElement);
+  const fullButton = $('overFull');
+  fullButton.hidden = !document.fullscreenEnabled;
+  fullButton.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else demo.requestFullscreen();
+  });
+  document.addEventListener('fullscreenchange', () => {
+    fullButton.textContent = document.fullscreenElement === demo ? 'Exit full screen' : 'Full screen';
+  });
 
   const W = 360, H = 240, L = 44, R = 14, T = 14, B = 34;
   const drawChart = (day) => {
@@ -923,7 +958,7 @@ function setupOvergrowth() {
     chart.replaceChildren();
     for (let e = 0; e <= top; e++) {
       chart.append(el('line', { x1: sx(0), x2: sx(last), y1: sy(10 ** e), y2: sy(10 ** e), stroke: '#e2e2e2' }));
-      chart.append(el('text', { x: L - 6, y: sy(10 ** e) + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#555' }, Number(10 ** e).toLocaleString('en')));
+      chart.append(el('text', { x: L - 6, y: sy(10 ** e) + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#555' }, new Intl.NumberFormat('en', { notation: 'compact' }).format(10 ** e)));
     }
     for (const d of [0, maturity, last]) {
       chart.append(el('text', { x: sx(d), y: H - B + 14, 'text-anchor': 'middle', 'font-size': 10, fill: '#555' }, `${d}`));
@@ -961,29 +996,31 @@ function setupOvergrowth() {
       + (shrink > 1.2 ? ` Drawn at 1/${fmt(shrink, shrink < 10 ? 1 : 0)} of the mature plant's scale.` : '');
   };
 
-  // Regrowing a big plant takes a moment, so slider moves are coalesced into one per frame.
-  const regrowLater = (again) => {
-    if (pending) return;
-    pending = true;
-    requestAnimationFrame(() => {
-      pending = false;
-      again();
-    });
+  // Regrowing a big plant takes a moment, so slider moves are coalesced into one regrow
+  // per frame. A settings change outranks a day change, since it regrows from scratch.
+  let queued = null; // null, 'day' or 'rebuild'
+  const growTo = (kind) => {
+    if (!queued) {
+      requestAnimationFrame(() => {
+        const kind = queued;
+        queued = null;
+        if (kind === 'rebuild') {
+          stop();
+          record();
+          plant = overgrown();
+          age.max = plant.lastDay();
+          age.value = age.max;
+        } else {
+          plant = overgrown();
+        }
+        plant.setAge(Number(age.value));
+        render();
+      });
+    }
+    if (queued !== 'rebuild') queued = kind;
   };
-  const showDay = () => regrowLater(() => {
-    plant = overgrown();
-    plant.setAge(Number(age.value));
-    render();
-  });
-  const rebuild = () => regrowLater(() => {
-    stop();
-    record();
-    plant = overgrown();
-    age.max = plant.lastDay();
-    age.value = age.max;
-    plant.setAge(plant.lastDay());
-    render();
-  });
+  const showDay = () => growTo('day');
+  const rebuild = () => growTo('rebuild');
 
   function stop() {
     clearTimeout(timer);
@@ -1006,6 +1043,7 @@ function setupOvergrowth() {
   age.addEventListener('pointerdown', stop);
 
   const choose = () => {
+    sizeCanvas();
     base = plantByKey(select.value);
     matureFrame = frameFor(base, canvas);
     rebuild();

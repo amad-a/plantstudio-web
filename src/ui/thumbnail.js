@@ -8,15 +8,17 @@ import { rgb } from '../model/support.js';
 const WHITE = rgb(255, 255, 255);
 const TDO_FACE = rgb(192, 192, 192), TDO_BACK = rgb(128, 128, 128);
 const MARGIN = 0.9;
-const painters = new Map();
+// One raster per canvas, remade when the canvas changes size and dropped with it.
+const painters = new WeakMap();
 
 function painterFor(canvas) {
-  const key = `${canvas.width}x${canvas.height}`;
-  if (!painters.has(key)) {
+  let painter = painters.get(canvas);
+  if (!painter || painter.raster.width !== canvas.width || painter.raster.height !== canvas.height) {
     const raster = new Raster(canvas.width, canvas.height);
-    painters.set(key, { raster, turtle: new Turtle(new RasterSurface(raster)) });
+    painter = { raster, turtle: new Turtle(new RasterSurface(raster)) };
+    painters.set(canvas, painter);
   }
-  return painters.get(key);
+  return painter;
 }
 
 function show(canvas, raster) {
