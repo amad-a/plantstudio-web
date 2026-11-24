@@ -887,7 +887,9 @@ function setupOvergrowth() {
   const select = $('overPlant'), canvas = $('overCanvas'), chart = $('overChart'), age = $('overAge');
   const days = $('overDays'), rate = $('overRate'), fixed = $('overFixed');
   const shows = [bindRange(days, (v) => `+${v}`), bindRange(rate, (v) => `${fmt(v)}%`)];
-  let base, matureFrame, plant, series, timer = null, pending = false;
+  // The plant is drawn at one scale for every day: by default the scale that fits it on
+  // its last day, so it grows across the canvas instead of the view zooming out.
+  let base, matureFrame, lastFrame, plant, series, timer = null, pending = false;
 
   const settings = () => {
     const mode = document.querySelector('input[name="overMode"]:checked').value;
@@ -908,6 +910,7 @@ function setupOvergrowth() {
       p.nextDay();
       series.push({ day: p.age, weight: p.totalBiomass_pctMPB, parts: p.partsCreated, piled: p.unallocatedNewVegetativeBiomass_pctMPB });
     }
+    lastFrame = frameFor(p, canvas);
   };
 
   const W = 360, H = 240, L = 44, R = 14, T = 14, B = 34;
@@ -943,7 +946,7 @@ function setupOvergrowth() {
 
   const render = () => {
     const day = plant.age;
-    const frame = fixed.checked ? matureFrame : frameFor(plant, canvas);
+    const frame = fixed.checked ? matureFrame : lastFrame;
     paintPlant(canvas, plant, frame);
     const shrink = matureFrame.scale / frame.scale;
     drawChart(day);
