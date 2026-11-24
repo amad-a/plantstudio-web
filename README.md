@@ -4,7 +4,7 @@ A browser port of PlantStudio Botanical Illustration Software 2.10 (2002), by Cy
 and Paul D. Fernhout. Plants grow from the original simulation and draw with hard-edged
 Win98-style pixels, in an interface built with [98.css](https://jdan.github.io/98.css/).
 
-**Try it at [palestineonline.net/plant](https://palestineonline.net/plant/).** To run your own copy:
+**Try it at [amadansari.net/plantstudio](https://amadansari.net/plantstudio/plantstudio-main.html).** To run your own copy:
 
 ```sh
 python3 -m http.server 8123 --bind 127.0.0.1   # then open http://127.0.0.1:8123/plantstudio-main.html
