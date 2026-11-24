@@ -42,12 +42,12 @@ export function centerAtScale(size, scale, width, height) {
   };
 }
 
-export function paintPlant(canvas, plant, { scale, x, y }) {
+export function paintPlant(canvas, plant, { scale, x, y }, options = DRAW_MODES.solids) {
   const { raster, turtle } = painterFor(canvas);
   raster.clear(WHITE);
   POSING.drawingForOutput = true;
   try {
-    plant.drawOn(turtle, DRAW_MODES.solids, scale, x, y);
+    plant.drawOn(turtle, options, scale, x, y);
   } finally {
     POSING.drawingForOutput = false;
   }

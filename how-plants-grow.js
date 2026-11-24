@@ -885,7 +885,7 @@ function setupBreeding() {
 
 function setupOvergrowth() {
   const select = $('overPlant'), canvas = $('overCanvas'), chart = $('overChart'), age = $('overAge');
-  const days = $('overDays'), rate = $('overRate'), fixed = $('overFixed');
+  const days = $('overDays'), rate = $('overRate'), fixed = $('overFixed'), drawMode = $('overDrawMode');
   const shows = [bindRange(days, (v) => `+${v}`), bindRange(rate, (v) => `${fmt(v)}%`)];
   // The plant is drawn at one scale for every day: by default the scale that fits it on
   // its last day, so it grows across the canvas instead of the view zooming out.
@@ -947,7 +947,7 @@ function setupOvergrowth() {
   const render = () => {
     const day = plant.age;
     const frame = fixed.checked ? matureFrame : lastFrame;
-    paintPlant(canvas, plant, frame);
+    paintPlant(canvas, plant, frame, DRAW_MODES[drawMode.value]);
     const shrink = matureFrame.scale / frame.scale;
     drawChart(day);
     const maturity = base.pGeneral.ageAtMaturity;
@@ -1014,6 +1014,7 @@ function setupOvergrowth() {
   for (const input of [days, rate]) input.addEventListener('input', rebuild);
   for (const radio of document.querySelectorAll('input[name="overMode"]')) radio.addEventListener('change', rebuild);
   fixed.addEventListener('change', render);
+  drawMode.addEventListener('change', render);
   select.addEventListener('change', choose);
   shows.forEach((show) => show());
   choose();
