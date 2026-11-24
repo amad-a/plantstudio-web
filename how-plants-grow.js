@@ -3,11 +3,12 @@
 // growth or drawing. Code excerpts are read from the source files when the page loads.
 
 import { parsePlantFile, breed, Plant } from './src/model/plant.js';
-import { Random, calcSCurveCoeffs, scurve, safediv } from './src/model/support.js';
+import { Random, calcSCurveCoeffs, scurve, safediv, rgb } from './src/model/support.js';
 import { Internode, Leaf, Meristem, Inflorescence, FlowerFruit, Mode, POSING, FEMALE } from './src/model/parts.js';
 import { Turtle, DRAW_MODES } from './src/model/turtle.js';
 import { Raster, RasterSurface, quicksort } from './src/model/surface.js';
-import { fitPlant, paintPlant, paintTdo } from './src/ui/thumbnail.js';
+import { fitPlant, paintPlant, paintTdo, makeTile } from './src/ui/thumbnail.js';
+import { ZipWriter } from './src/ui/zip-writer.js';
 
 const LIBRARIES = ['Garden flowers', 'Wildflowers', 'Garden plants', 'Bushes and shrubs', 'Grassy plants', 'New version 2 plants', 'Strange breeder plants'];
 const decoder = new TextDecoder('windows-1252');
@@ -982,7 +983,7 @@ function setupOvergrowth() {
   const render = () => {
     const day = plant.age;
     const frame = fixed.checked ? matureFrame : lastFrame;
-    paintPlant(canvas, plant, frame, DRAW_MODES[drawMode.value]);
+    paintPlant(canvas, plant, frame, DRAW_MODES[drawMode.value], background(canvas.width));
     const shrink = matureFrame.scale / frame.scale;
     drawChart(day);
     const maturity = base.pGeneral.ageAtMaturity;
@@ -1053,6 +1054,139 @@ function setupOvergrowth() {
   for (const radio of document.querySelectorAll('input[name="overMode"]')) radio.addEventListener('change', rebuild);
   fixed.addEventListener('change', render);
   drawMode.addEventListener('change', render);
+
+  // Background: a colour, and optionally an uploaded image repeated behind the plant as
+  // hard-edged pixels. Pixel size is for an 860-wide picture and scales with the output,
+  // so a recording at 4K has the same wallpaper as the canvas, just sharper.
+  const bgColor = $('overBg'), tileFile = $('overTileFile'), tileWidth = $('overTileWidth'), tilePixel = $('overTilePixel');
+  bindRange(tilePixel, (v) => `${v}×`);
+  let tileImage = null;
+  const tiles = new Map();
+  function background(width) {
+    const hex = bgColor.value;
+    const color = rgb(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+    if (!tileImage) return { color };
+    const pixelSize = Math.max(1, Math.round((Number(tilePixel.value) * width) / 860));
+    const key = `${tileWidth.value}/${pixelSize}`;
+    if (!tiles.has(key)) tiles.set(key, makeTile(tileImage, Number(tileWidth.value), pixelSize));
+    return { color, tile: tiles.get(key) };
+  }
+  tileFile.addEventListener('change', async () => {
+    const file = tileFile.files[0];
+    if (!file) return;
+    try {
+      tileImage = await createImageBitmap(file);
+    } catch {
+      tileImage = null;
+      $('overReadout').textContent = `Couldn't read ${file.name} as an image.`;
+      return;
+    }
+    tiles.clear();
+    $('overTileClear').disabled = false;
+    render();
+  });
+  $('overTileClear').addEventListener('click', () => {
+    tileImage = null;
+    tiles.clear();
+    tileFile.value = '';
+    $('overTileClear').disabled = true;
+    render();
+  });
+  bgColor.addEventListener('input', render);
+  for (const input of [tileWidth, tilePixel]) input.addEventListener('input', () => { tiles.clear(); render(); });
+
+  // Recording: every day from 1 to the last, drawn off screen at the chosen size and
+  // saved as PNGs in a zip. Where the browser can (Chrome, Edge) the zip streams to the
+  // file as it's made; elsewhere it's built in memory and downloaded at the end.
+  const recSize = $('overRecSize'), recButton = $('overRecord'), recOut = $('overRecOut');
+  let recording = null;
+  const download = (blob, filename) => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+  };
+  const readme = (p, width, height, frames) => {
+    const o = p.overgrowth;
+    const goesTo = o.swell ? 'swelling old parts' : o.wake ? 'waking dormant buds' : 'nothing (the original\'s rules)';
+    const share = width <= 1920
+      ? 'ffmpeg -framerate 24 -i frame-%04d.png -vf scale=iw*2:ih*2:flags=neighbor -c:v libx264 -crf 12 -pix_fmt yuv420p plant-share.mp4'
+      : 'ffmpeg -framerate 24 -i frame-%04d.png -c:v libx264 -crf 12 -pix_fmt yuv420p plant-share.mp4';
+    return `PlantStudio overgrowth: ${p.name}
+${frames} frames, ${width} x ${height}. frame-0001.png is day 1; maturity is day ${p.pGeneral.ageAtMaturity}.
+Overgrowth: +${o.days} days at ${fmt(o.rate * 100)}% a day, extra weight goes to ${goesTo}.
+Drawn using ${drawMode.selectedOptions[0].text.toLowerCase()}${fixed.checked ? ", at the mature plant's scale" : ''}.
+
+Lossless video, exact pixels (plays in VLC, mpv, IINA; not QuickTime):
+  ffmpeg -framerate 24 -i frame-%04d.png -c:v libx264rgb -qp 0 -preset veryslow plant-lossless.mp4
+
+ProRes 4444 for editing (QuickTime, Final Cut, Premiere), full-resolution colour:
+  ffmpeg -framerate 24 -i frame-%04d.png -c:v prores_ks -profile:v 4444 -pix_fmt yuv444p10le plant.mov
+
+For posting online. Sites re-compress everything; ${width <= 1920 ? 'doubling each pixel first keeps the edges hard' : 'at this size, upload as it is'}:
+  ${share}
+
+Change -framerate to speed it up or slow it down.
+`;
+  };
+  recButton.addEventListener('click', async () => {
+    if (recording) {
+      recording.cancelled = true;
+      return;
+    }
+    stop();
+    let [width, height] = recSize.value === 'canvas' ? [canvas.width, canvas.height] : recSize.value.split('x').map(Number);
+    width -= width % 2; // most video encoders need even sizes
+    height -= height % 2;
+    const name = `${base.name}-overgrowth-${width}x${height}`.replace(/[^\w.-]+/g, '-');
+    let sink;
+    if (window.showSaveFilePicker) {
+      let handle;
+      try {
+        handle = await window.showSaveFilePicker({ suggestedName: `${name}.zip`, types: [{ description: 'Zip archive', accept: { 'application/zip': ['.zip'] } }] });
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+        throw error;
+      }
+      const stream = await handle.createWritable();
+      sink = { write: (bytes) => stream.write(bytes), close: () => stream.close(), abort: () => stream.abort() };
+    } else {
+      const parts = [];
+      sink = { write: (bytes) => { parts.push(new Blob([bytes])); }, close: () => download(new Blob(parts, { type: 'application/zip' }), `${name}.zip`), abort: () => {} };
+    }
+    recording = { cancelled: false };
+    recButton.textContent = 'Cancel';
+    const out = document.createElement('canvas');
+    out.width = width;
+    out.height = height;
+    const frame = fixed.checked ? frameFor(base, out) : frameFor(lastPlant, out);
+    const mode = DRAW_MODES[drawMode.value];
+    const bg = background(width);
+    const p = overgrown();
+    const zip = new ZipWriter(sink.write);
+    const last = p.lastDay();
+    try {
+      while (p.age < last) {
+        if (recording.cancelled) throw new DOMException('Cancelled', 'AbortError');
+        p.nextDay();
+        paintPlant(out, p, frame, mode, bg);
+        const blob = await new Promise((resolve) => out.toBlob(resolve, 'image/png'));
+        await zip.add(`frame-${String(p.age).padStart(4, '0')}.png`, new Uint8Array(await blob.arrayBuffer()));
+        recOut.textContent = `day ${p.age} / ${last}`;
+      }
+      await zip.add('README.txt', new TextEncoder().encode(readme(p, width, height, last)));
+      await zip.finish();
+      await sink.close();
+      recOut.textContent = `Saved ${last} frames.`;
+    } catch (error) {
+      await sink.abort();
+      recOut.textContent = error.name === 'AbortError' ? 'Cancelled.' : `Failed: ${error.message}`;
+    } finally {
+      recording = null;
+      recButton.textContent = 'Record frames (.zip)';
+    }
+  });
   select.addEventListener('change', choose);
   shows.forEach((show) => show());
   choose();

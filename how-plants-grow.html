@@ -559,6 +559,13 @@
             </fieldset>
             <div class="field-row"><label for="overDrawMode">Draw using</label><select id="overDrawMode"><option value="boxes">Bounding boxes</option><option value="frames">Wire frames</option><option value="solids" selected>Solids</option></select></div>
             <div class="field-row"><input type="checkbox" id="overFixed"><label for="overFixed">Draw at the mature plant's scale (overgrowth runs off the edges)</label></div>
+            <fieldset>
+              <legend>Background</legend>
+              <div class="field-row"><label for="overBg">Colour</label><input type="color" id="overBg" value="#ffffff"></div>
+              <div class="field-row"><label for="overTileFile">Wallpaper</label><input type="file" id="overTileFile" accept="image/*"><button id="overTileClear" disabled>Remove</button></div>
+              <div class="field-row"><label for="overTileWidth">Tile width</label><select id="overTileWidth"><option value="0">As uploaded</option><option value="8">8 pixels</option><option value="16">16 pixels</option><option value="32" selected>32 pixels</option><option value="64">64 pixels</option><option value="128">128 pixels</option></select></div>
+              <div class="field-row"><label for="overTilePixel">Pixel size</label><input id="overTilePixel" type="range" min="1" max="12" step="1" value="3"><output></output></div>
+            </fieldset>
             <div class="field-row">
               <button id="overPlay">Play</button>
               <button id="overFull" hidden>Full screen</button>
@@ -567,6 +574,12 @@
               <output id="overAgeOut"></output>
             </div>
             <p class="readout" id="overReadout"></p>
+            <fieldset>
+              <legend>Record every day as PNG frames</legend>
+              <div class="field-row"><label for="overRecSize">Size</label><select id="overRecSize"><option value="canvas">This canvas</option><option value="1920x1080" selected>1920 × 1080</option><option value="3840x2160">3840 × 2160 (4K)</option></select></div>
+              <div class="field-row"><button id="overRecord">Record frames (.zip)</button><output id="overRecOut"></output></div>
+              <p class="readout">Lossless, at exactly the pixels drawn. The zip has a README with ffmpeg commands for turning the frames into a video.</p>
+            </fieldset>
           </div>
           <div class="stage full over-canvas"><canvas id="overCanvas" width="860" height="620"></canvas></div>
         </div>

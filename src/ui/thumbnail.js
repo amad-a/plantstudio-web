@@ -44,16 +44,58 @@ export function centerAtScale(size, scale, width, height) {
   };
 }
 
-export function paintPlant(canvas, plant, { scale, x, y }, options = DRAW_MODES.solids) {
+// `background` is optional: { color } to clear with instead of white, and { tile } (from
+// makeTile) to repeat behind the plant.
+export function paintPlant(canvas, plant, { scale, x, y }, options = DRAW_MODES.solids, background = {}) {
   const { raster, turtle } = painterFor(canvas);
-  raster.clear(WHITE);
+  raster.clear(background.color ?? WHITE);
+  raster.owner = 1; // marks the plant's pixels, so a tiled background fills only the rest
   POSING.drawingForOutput = true;
   try {
     plant.drawOn(turtle, options, scale, x, y);
   } finally {
     POSING.drawingForOutput = false;
+    raster.owner = 0;
   }
+  if (background.tile) fillBehind(raster, background.tile);
   show(canvas, raster);
+}
+
+// An image made into a wallpaper tile: shrunk to `width` pixels across (0 keeps its own
+// size), then each pixel blown up to a `pixelSize` square with no smoothing.
+export function makeTile(image, width, pixelSize) {
+  const across = Math.max(1, Math.round(width || image.width));
+  const down = Math.max(1, Math.round((image.height * across) / image.width));
+  const small = new OffscreenCanvas(across, down);
+  small.getContext('2d').drawImage(image, 0, 0, across, down);
+  const size = Math.max(1, Math.min(pixelSize, Math.floor(4096 / Math.max(across, down))));
+  const big = new OffscreenCanvas(across * size, down * size);
+  const context = big.getContext('2d');
+  context.imageSmoothingEnabled = false;
+  context.drawImage(small, 0, 0, big.width, big.height);
+  const { data } = context.getImageData(0, 0, big.width, big.height);
+  return { width: big.width, height: big.height, pixels: new Uint32Array(data.buffer) };
+}
+
+// Pixels are stored the way ImageData lays them out: 0xAABBGGRR on little-endian machines.
+function fillBehind(raster, tile) {
+  const { pixels, owners, width, height } = raster;
+  for (let y = 0; y < height; y++) {
+    const row = y * width, tileRow = (y % tile.height) * tile.width;
+    for (let x = 0; x < width; x++) {
+      const i = row + x;
+      if (owners[i]) continue;
+      const t = tile.pixels[tileRow + (x % tile.width)];
+      const alpha = t >>> 24;
+      if (alpha === 255) {
+        pixels[i] = t;
+      } else if (alpha) {
+        const p = pixels[i];
+        const mix = (shift) => ((((t >>> shift) & 255) * alpha + ((p >>> shift) & 255) * (255 - alpha)) / 255) & 255;
+        pixels[i] = (0xff000000 | (mix(16) << 16) | (mix(8) << 8) | mix(0)) >>> 0;
+      }
+    }
+  }
 }
 
 export function paintTdo(canvas, tdo) {
